@@ -1,0 +1,22 @@
+name: Check password
+
+on:
+  workflow_dispatch:
+    inputs:
+      password:
+        description: "Enter deployment password"
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check password
+        run: |
+          if [ "${{ github.event.inputs.password }}" = "${{ secrets.DEPLOYMENT_PASSWORD }}" ]; then
+            echo "Password matched! Proceeding with deployment..."
+          else
+            echo "❌ Invalid password."
+            exit 1
+          fi
