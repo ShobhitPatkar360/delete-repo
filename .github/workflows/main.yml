@@ -1,17 +1,31 @@
-name: Check password
+name: ASG Instance Refresh
 
 on:
   workflow_dispatch:
     inputs:
+      deploy-env:
+        description: "Select an environment"
+        type: choice
+        options:
+          - stage
+          - production
+        required: true
+        default: stage
       password:
         description: "Enter deployment password"
         required: true
         type: string
 
 jobs:
-  deploy:
+  refresh-asg:
     runs-on: ubuntu-latest
+
     steps:
+      # some initials
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        
+      # checking the password
       - name: Check password
         run: |
           if [ "${{ github.event.inputs.password }}" = "${{ secrets.DEPLOYMENT_PASSWORD }}" ]; then
@@ -20,3 +34,44 @@ jobs:
             echo "❌ Invalid password."
             exit 1
           fi
+
+	    # Setting Environment variable
+      - name: Set and Echo Variable
+        run: |
+          if [ "${{ inputs.deploy-env }}" = "stage" ]; then
+            echo "ASG_GROUP_NAME=willwize-stage-application-asg" >> $GITHUB_ENV        
+          elif [ "${{ inputs.deploy-env }}" = "production" ]; then
+            echo "ASG_GROUP_NAME=willwize-application-asg" >> $GITHUB_ENV        
+          else
+            echo "Invalid input"
+            exit
+            
+
+			# creating preference file
+      - name: Create preferences file
+        run: |
+          cat > preferences.json <<'EOF'
+          {
+            "InstanceWarmup": 0,
+            "MinHealthyPercentage": 110,
+            "SkipMatching": false,
+            "ScaleInProtectedInstances": "Ignore",
+            "StandbyInstances": "Ignore",
+            "BakeTime": 100
+          }
+          EOF
+          
+       # Authenticate to AWS 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ secrets.AWS_REGION_PROD }}
+
+			# autoscaling group instance refresh
+      - name: Start ASG instance refresh
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name $ASG_GROUP_NAME \
+            --preferences file://preferences.json
